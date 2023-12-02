@@ -119,7 +119,7 @@ def find_float(img_name) -> tuple:
     """Найти маленький скриншот на большом"""
     global w
     global h
-    # TODO: сделать универсальный поплавок без фона?
+    # сделать универсальный поплавок без фона?
     for x in range(0, 7):
         # загружаем шаблон
         template = cv2.imread('var/fishing_float_' + str(x) + '.png', 0)
