@@ -7,6 +7,7 @@ import threading
 import os
 import pyautogui
 import cv2
+import configparser
 import pyscreenshot as ImageGrab
 import numpy as np
 import time
@@ -16,6 +17,7 @@ from tkinter import messagebox
 import pyaudio
 import audioop
 import math
+from PIL import Image, ImageTk
 from collections import deque
 
 
@@ -33,26 +35,28 @@ deactivity = 0                      # счётчик не найденных п�
 starttime = time.time()
 starttime2 = time.time()
 
-buff_interval = 603                             # использовать бафф каждые X сек.
-buff2_interval = 3603                           # использовать бафф2 каждые X сек.
-wow_process = "Wow-64_NoFileCheck.exe"          # название процесса для запуска скрипта
-threshold = 0.6                                 # порог соответствия шаблона(0.6-0.8)
-minpic_diff = 2.0                               # порог срабатывания подсекания (1-3)
-is_buff_on = 0                                  # должен ли быть бафф
-button_buff = '2'                               # кнопка баффа
-button_buff2 = '3'                              # кнопка второго баффа
-button_fishing = '1'                            # кнопка рыбалки
-max_tries = 1000                                # макс. кол-во попыток до конца скрипта
-deactive = 20                                   # кол-во необнаружений поплавка до выхода
-minpic_size = 20                                # #отступ(размер) маленького скриншота(~20-25)
-minpic_show = 1                                 # показывать маленький скриншот
-algorithm = 'visual'                            # алгоритм, используемый для подсекания
+settings = {}
+# buff_interval = 603                             # использовать бафф каждые X сек.
+# buff2_interval = 3603                           # использовать бафф2 каждые X сек.
+# wow_process = "Wow-64_NoFileCheck.exe"          # название процесса для запуска скрипта
+# threshold = 0.6                                 # порог соответствия шаблона(0.6-0.8)
+# minpic_diff = 2.0                               # порог срабатывания подсекания (1-3)
+# minpic_diff = 2.0                               # порог срабатывания подсекания (1-3)
+# is_buff_on = 0                                  # должен ли быть бафф
+# button_buff = '2'                               # кнопка баффа
+# button_buff2 = '3'                              # кнопка второго баффа
+# button_fishing = '1'                            # кнопка рыбалки
+# max_tries = 1000                                # макс. кол-во попыток до конца скрипта
+# deactive = 20                                   # кол-во необнаружений поплавка до выхода
+# minpic_size = 20                                # отступ(размер) маленького скриншота(~20-25)
+# minpic_show = 1                                 # показывать маленький скриншот
+# algorithm = 'visual'                            # алгоритм, используемый для подсекания
 
 
 def check_process() -> bool:
     """Проверка существования процесса игры"""
     write_to_log('Проверка процесса игры..')
-    wow_process_names = [wow_process]
+    wow_process_names = [settings['wow_process']]
     running = False
     for pid in psutil.pids():
         p = psutil.Process(pid)
@@ -77,8 +81,8 @@ def check_screen_size():
     img = ImageGrab.grab()
 
     screen_size = [img.size[0] / 2, img.size[1] / 2]                     # screen_size = 960, 540
-    screen_start_point = [screen_size[0] * 0.35, screen_size[1] * 0.35]  # 336, 189
-    screen_end_point = [screen_size[0] * 0.65, screen_size[1] * 0.65]    # 624, 324
+    screen_start_point = [screen_size[0] * 0.10, screen_size[1] * 0.35]  # отступ ВПРАВО и ВНИЗ
+    screen_end_point = [screen_size[0] * 0.35, screen_size[1] * 0.75]    # отступ ВПРАВО и ВНИЗ
 
     write_to_log("Область сканирования определена")
 
@@ -86,8 +90,8 @@ def check_screen_size():
 def send_float():
     """Закинуть удочку"""
     write_to_log('Ловим...')
-    pyautogui.press(button_fishing)
-    time.sleep(2)
+    pyautogui.press(settings['button_fishing'])
+    time.sleep(3)
 
 
 def make_screenshot() -> str:
@@ -115,7 +119,7 @@ def find_float(img_name) -> tuple:
     """Найти маленький скриншот на большом"""
     global w
     global h
-    # todo: сделать универсальный поплавок без фона?
+    # TODO: сделать универсальный поплавок без фона?
     for x in range(0, 7):
         # загружаем шаблон
         template = cv2.imread('var/fishing_float_' + str(x) + '.png', 0)
@@ -141,7 +145,7 @@ def find_float(img_name) -> tuple:
         # а то и рыба будет похожа на поплавок
 
         # координаты где находится шаблон на базовом скриншоте
-        loc = np.where(res >= threshold)
+        loc = np.where(res >= float(settings['threshold']))
 
         # выводим результаты на картинку
         for pt in zip(*loc[::-1]):
@@ -160,7 +164,7 @@ def move_mouse(place):
 
 
 def waiting(place):
-    """Алгоритм определения момента для подсекания"""
+    """Алгоритм определения момента для подсекания визуально"""
     global w
     global h
     x = place[0]
@@ -169,12 +173,12 @@ def waiting(place):
     collect.clear()
     write_to_log('Отслеживаем движение поплавка...')
 
-    #цикл определённое кол-во секунд
+    # цикл определённое кол-во секунд
     t_end = time.time() + 17
     while time.time() < t_end:
         # маленький скриншот именно поплавка
-        screenshot = ImageGrab.grab(bbox=(int(screen_start_point[0]) + int(x) - minpic_size, int(screen_start_point[1]) + int(y) - minpic_size, int(screen_start_point[0]) + int(x) + minpic_size, int(screen_start_point[1]) + int(y) + minpic_size))
-        if minpic_show == 1:
+        screenshot = ImageGrab.grab(bbox=(int(screen_start_point[0]) + int(x) - int(settings['minpic_size']), int(screen_start_point[1]) + int(y) - int(settings['minpic_size']), int(screen_start_point[0]) + int(x) + int(settings['minpic_size']), int(screen_start_point[1]) + int(y) + int(settings['minpic_size'])))
+        if settings['minpic_show'] == '1':
             screenshot.save('var/float.png')
 
             # код обновления картинки на форме
@@ -183,37 +187,39 @@ def waiting(place):
             floater = load_little_screenshot()
             lbl_floater.configure(image=floater)
 
-        #извлечение признаков
+        # извлечение признаков
         mean = np.mean(screenshot)
 
-        #добавляем значение скриншота в лист
+        # добавляем значение скриншота в лист
         collect.append(mean)
 
-        #вычисляем разницу между средним листа и элементом
+        # вычисляем разницу между средним листа и элементом
         difference = np.mean(collect) - mean
 
         # порог срабатывания подсекания
-        if abs(difference) > minpic_diff:
+        if abs(difference) > float(settings['minpic_diff']):
             snatch()
             break
 
         # если после 10ти мини скриншотов
         # максимум и минимум коллекции слишком мал (нет разницы в мини скринах)
-        if len(collect) > 10:
+        if len(collect) > 20:
             slist = sorted(collect)
             slist_diff = abs(slist[-1]) - abs(slist[0])
+            print(slist_diff)
             if slist_diff < 1:
                 write_to_log('Похоже шаблон сопоставлен ошибочно...')
                 break
 
 
 def listening():
+    """Алгоритм определения момента для подсекания по звуку"""
     write_to_log("Слушаем звук всплеска...")
     CHUNK = 1024
     FORMAT = pyaudio.paInt16
     CHANNELS = 2
     RATE = 18000  # битрейт звука, который мы хотим слушать
-    THRESHOLD = 1200  # порог интенсивности звука, если интенсивность ниже, значит звук по нашим меркам слишком тихий
+    THRESHOLD = 1300  # порог интенсивности звука, если интенсивность ниже, значит звук по нашим меркам слишком тихий
     SILENCE_LIMIT = 1  # длительность тишины, если мы не слышим ничего это время, то начинаем слушать заново
 
     # открываем стрим
@@ -268,148 +274,81 @@ def logout():
 
 def buff():
     """Бафф №1"""
-    window.after(1000, pyautogui.press(button_buff))
+    window.after(1000, pyautogui.press(settings['button_buff']))
     window.after(3000, write_to_log('Прожимаем бафф..'))
 
 
 def buff2():
     """Бафф №2"""
-    window.after(1000, pyautogui.press(button_buff2))
+    window.after(1000, pyautogui.press(settings['button_buff2']))
     window.after(3000, write_to_log('Прожимаем второй бафф..'))
 
 
 def load_config():
     """Загрузка конфигурации"""
-    global buff_interval
-    global buff2_interval
-    global wow_process
-    global threshold
-    global minpic_diff
-    global is_buff_on
-    global button_buff
-    global button_buff2
-    global button_fishing
-    global max_tries
-    global deactive
-    global minpic_size
-    global minpic_show
-    global algorithm
+    global settings
 
-    config = {}
+    cfg = configparser.ConfigParser()
     try:
-        f = open('config.ini')
-        for line in f:
-            line = line[:-1]                   # удаляем 2 символа с конца /n
-            li = list(line.split(' '))
-            config[li[0]] = li[1]
-        f.close()
-    except Exception:
-        tkinter.messagebox.showerror("Ошибка", "Невозможно прочитать файл настроек! Восстановлены значеня по умолчанию.")
-
-    buff_interval = int(config['buff_interval'])
-    buff2_interval = int(config['buff2_interval'])
-    wow_process = config['wow_process']
-    threshold = float(config['threshold'])
-    minpic_diff = float(config['minpic_diff'])
-    is_buff_on = int(config['is_buff_on'])
-    button_buff = config['button_buff']
-    button_buff2 = config['button_buff2']
-    button_fishing = config['button_fishing']
-    max_tries = int(config['max_tries'])
-    deactive = int(config['deactive'])
-    minpic_size = int(config['minpic_size'])
-    minpic_show = int(config['minpic_show'])
-    algorithm = config['algorithm']
+        cfg.read('config.ini')
+        settings = cfg['settings']
+    except Exception as e:
+        load_default_config()
+        tkinter.messagebox.showerror("Ошибка", "Невозможно прочитать файл настроек! Восстановлены значения по умолчанию.")
 
 
 def load_default_config():
     """Загрузка дефолтной конфигурации"""
-    global buff_interval
-    global buff2_interval
-    global wow_process
-    global threshold
-    global minpic_diff
-    global is_buff_on
-    global button_buff
-    global button_buff2
-    global button_fishing
-    global max_tries
-    global deactive
-    global minpic_size
-    global minpic_show
-    global algorithm
+    global settings
 
-    buff_interval = 603
-    buff2_interval = 3603
-    wow_process = "Wow-64_NoFileCheck.exe"
-    threshold = 0.6
-    minpic_diff = 2.0
-    is_buff_on = 0
-    button_buff = '2'
-    button_buff2 = '3'
-    button_fishing = '1'
-    max_tries = 2500
-    deactive = 20
-    minpic_size = 20
-    minpic_show = 1
-    algorithm = 'visual'
+    settings['buff_interval'] = 603
+    settings['buff2_interval'] = 3603
+    settings['wow_process'] = "Wow-64_NoFileCheck.exe"
+    settings['threshold'] = 0.6
+    settings['minpic_diff'] = 2.0
+    settings['is_buff_on'] = 0
+    settings['button_buff'] = '2'
+    settings['button_buff2'] = '3'
+    settings['button_fishing'] = '1'
+    settings['max_tries'] = 2500
+    settings['deactive'] = 20
+    settings['minpic_size'] = 20
+    settings['minpic_show'] = '1'
+    settings['algorithm'] = 'visual'
 
 
 def save_config():
     """Сохранение конфигурации"""
-    global buff_interval
-    global buff2_interval
-    global wow_process
-    global threshold
-    global minpic_diff
-    global is_buff_on
-    global button_buff
-    global button_buff2
-    global button_fishing
-    global max_tries
-    global deactive
-    global minpic_size
-    global minpic_show
-    global algorithm
+    global settings
 
+    cfg = configparser.ConfigParser()
     try:
-        buff_interval = int(buff_intr.get())
-        buff2_interval = int(buff2_intr.get())
-        threshold = float(threshold_txt.get())
-        minpic_diff = minpic_diff_txt.get()
-        is_buff_on = str(check_buff.get())
-        button_buff = b_btn.get()
-        button_buff2 = b2_btn.get()
-        button_fishing = btn_f.get()
-        max_tries = int(max_tries_int.get())
-        deactive = int(deactive_txt.get())
-        minpic_size = int(fl_size.get())
-        algorithm = algorithm_tk.get()
-        #minpic_show = str(show_fl.get())
-    except Exception:
+        cfg.add_section('settings')
+        cfg.set('settings', 'buff_interval', buff_intr.get())
+        cfg.set('settings', 'buff2_interval', buff2_intr.get())
+        cfg.set('settings', 'threshold', threshold_txt.get())
+        cfg.set('settings', 'minpic_diff', minpic_diff_txt.get())
+        cfg.set('settings', 'is_buff_on', str(check_buff.get()))
+        cfg.set('settings', 'button_buff',  b_btn.get())
+        cfg.set('settings', 'button_buff2',  b2_btn.get())
+        cfg.set('settings', 'button_fishing', btn_f.get())
+        cfg.set('settings', 'max_tries', max_tries_int.get())
+        cfg.set('settings', 'deactive', deactive_txt.get())
+        cfg.set('settings', 'minpic_size', fl_size.get())
+        cfg.set('settings', 'algorithm', algorithm_tk.get())
+        cfg.set('settings', 'wow_process', entr_process.get())
+        cfg.set('settings', 'minpic_show', '1')
+    except Exception as e:
         messagebox.showerror("Ошибка", "Неверно получены данные!")
         return
 
     try:
-        f = open('config.ini', 'w')
-        f.write(f"buff_interval {buff_interval}" + '\n')
-        f.write(f"buff2_interval {buff2_interval}" + '\n')
-        f.write(f"wow_process {wow_process}" + '\n')
-        f.write(f"threshold {threshold}" + '\n')
-        f.write(f"minpic_diff {minpic_diff}" + '\n')
-        f.write(f"is_buff_on {is_buff_on}" + '\n')
-        f.write(f"button_buff {button_buff}" + '\n')
-        f.write(f"button_buff2 {button_buff2}" + '\n')
-        f.write(f"button_fishing {button_fishing}" + '\n')
-        f.write(f"max_tries {max_tries}" + '\n')
-        f.write(f"deactive {deactive}" + '\n')
-        f.write(f"minpic_size {minpic_size}" + '\n')
-        f.write(f"minpic_show {minpic_show}" + '\n')
-        f.write(f"algorithm {algorithm}" + '\n')
-        f.close()
-    except Exception:
+        with open('config.ini', 'w') as config:
+            cfg.write(config)
+        write_to_log('Конфигурация успешно сохранена')
+
+    except Exception as e:
         messagebox.showerror("Ошибка", "Невозможно записать файл!")
-    write_to_log('Конфигурация успешно сохранена')
     reload_config()
 
 
@@ -420,10 +359,10 @@ def main():
 
     write_to_log("Ждём 2 секунды, можно переключиться на WoW")
     window.after(2000, check_screen_size())
-    write_to_log(f"Подсекание по {algorithm} алгоритму")
+    write_to_log(f"Подсекание по {settings['algorithm']} алгоритму")
 
     # начальный бафф
-    if is_buff_on == True:
+    if bool(int(settings['is_buff_on'])):
         buff()
         buff2()
 
@@ -450,14 +389,14 @@ def main_loop():
             return
 
         # Если достигнуто максимальное число забросов
-        if tries == max_tries:
+        if tries == int(settings['max_tries']):
             write_to_log('Максимальное число забросов')
             write_to_log('Бот остановлен')
             logout()
             exit()
 
         # Если не нашёл 20 раз подряд поплавок - выходим
-        if deactivity == deactive:
+        if deactivity == int(settings['deactive']):
             write_to_log(f'Поплавок не найден {deactivity} раз подряд')
             write_to_log('Бот остановлен')
             logout()
@@ -465,12 +404,12 @@ def main_loop():
             break
 
         # Если подошло время баффа - баффаем и обнуляем переменную времени
-        if time.time() - starttime > buff_interval and is_buff_on:
+        if time.time() - starttime > int(settings['buff_interval']) and bool(int(settings['is_buff_on'])):
             buff()
             starttime = time.time()
 
         # Если подошло время баффа 2 - баффаем и обнуляем переменную времени
-        if time.time() - starttime2 > buff2_interval and is_buff_on:
+        if time.time() - starttime2 > int(settings['buff2_interval']) and bool(int(settings['is_buff_on'])):
             buff2()
             starttime2 = time.time()
 
@@ -492,7 +431,7 @@ def main_loop():
         move_mouse(place)
 
         # условие, КОГДА нужно подсекать
-        if algorithm == 'visual':
+        if settings['algorithm'] == 'visual':
             waiting(place)
         else:
             listening()
@@ -505,6 +444,7 @@ def reload_config():
         write_to_log('Конфигурация загружена')
     except Exception:
         load_default_config()
+        save_config()
         write_to_log('Не прочитан файл конфигурации')
         write_to_log('Все значения по умолчанию')
 
@@ -546,9 +486,12 @@ def write_to_log(msg):
 
 
 def load_big_screenshot() -> str:
-    """Сохранить большой скриншот"""
+    """Загрузить большой скриншот"""
     try:
-        scan = tkinter.PhotoImage(file='var/fishing_session.png')
+        image = Image.open("var/fishing_session.png")
+        resized_image = image.resize((290, 160), Image.Resampling.LANCZOS)
+        scan = ImageTk.PhotoImage(resized_image)
+        # scan = tkinter.PhotoImage(file='var/fishing_session.png')
     except Exception:
         scan = tkinter.PhotoImage(file='')
     finally:
@@ -556,7 +499,7 @@ def load_big_screenshot() -> str:
 
 
 def load_little_screenshot() -> str:
-    """Сохранить маленький скриншот"""
+    """Загрузить маленький скриншот"""
     try:
         floater = tkinter.PhotoImage(file='var/float.png')
     except Exception:
@@ -566,7 +509,7 @@ def load_little_screenshot() -> str:
 
 
 def options():
-    '''Справка по настройкам'''
+    """Справка по настройкам"""
     top = tkinter.Toplevel(window)
 
     top.title("Справка по настройкам")
@@ -608,7 +551,7 @@ def options():
      Имя процесса - Имя exe'шника ВоВ, которое бот будет искать в процессах
      Кнопка рыбалки - кнопка, на которую в ВоВ назначена рыбалка
      Порог нахождения поплавка - коэффициент сравнения области сканирования и шаблона.
-          Задаётся в пределах 0.6 - 0.8.
+          Задаётся в пределах 0.6 - 0.8(ниже - грубее сопоставление).
      Порог подсекания - Значение, определяющее на сколько отличается колыхнувшийся
           поплавок от спокойного. Задаётся в пределах 1.6 - 3
      Максимум забросов - Максимальное количество забросов, после чего выйдет из игры и 
@@ -630,9 +573,9 @@ def options():
 
 
 window = tkinter.Tk()
-window.title("RFBot v1.00")
+window.title("RFBot v1.01")
 window.geometry("440x570+850+250")
-window.resizable(0, 0)
+window.resizable(False, False)
 photo = tkinter.PhotoImage(file='icon.png')
 window.iconphoto(False, photo)
 
@@ -653,6 +596,7 @@ minpic_diff_txt = tkinter.StringVar()
 max_tries_int = tkinter.StringVar()
 deactive_txt = tkinter.StringVar()
 algorithm_tk = tkinter.StringVar()
+entr_process = tkinter.StringVar()
 
 
 # начальная загрузка значений в форму
@@ -685,7 +629,7 @@ btn_save.place(x=10, y=75)
 
 # начальная загрузка картинок в форму
 scan = load_big_screenshot()
-if int(minpic_show) == 1:
+if settings.get('minpic_show') == '1':
     floater = load_little_screenshot()
 else:
     floater = tkinter.PhotoImage(file='')
@@ -704,7 +648,7 @@ lbl_scan_text = tkinter.Label(window, text="Размер картинки", font
 lbl_scan_text.place(x=5, y=175)
 fl_sz = tkinter.Entry(textvariable=fl_size, width=3, font=('Consolas', 9))
 fl_sz.place(x=110, y=175)
-fl_sz.insert(0, minpic_size)
+fl_sz.insert(0, settings['minpic_size'])
 
 #chFl = Checkbutton(window, text="Показать картинку", variable=show_fl)
 #chFl.place(x=5, y=210)
@@ -712,31 +656,31 @@ fl_sz.insert(0, minpic_size)
 
 chBuff = tkinter.Checkbutton(window, text="Использовать итем", font=('Consolas', 9), variable=check_buff)
 chBuff.place(x=5, y=205)
-check_buff.set(is_buff_on)
+check_buff.set(settings['is_buff_on'])
 
 lbl_item_btn = tkinter.Label(window, text="Кнопка итема", font=('Consolas', 9))
 lbl_item_btn.place(x=5, y=225)
 entr_item_btn = tkinter.Entry(textvariable=b_btn, width=4, font=('Consolas', 9))
 entr_item_btn.place(x=175, y=225)
-entr_item_btn.insert(0, button_buff)
+entr_item_btn.insert(0, settings['button_buff'])
 
 lbl_item_interval = tkinter.Label(window, text="Прожимать каждые(сек)", font=('Consolas', 9))
 lbl_item_interval.place(x=5, y=255)
 entr_item_interval = tkinter.Entry(textvariable=buff_intr, width=4, font=('Consolas', 9))
 entr_item_interval.place(x=175, y=255)
-entr_item_interval.insert(0, buff_interval)
+entr_item_interval.insert(0, settings['buff_interval'])
 
 lbl_item2_btn = tkinter.Label(window, text="Кнопка второго итема", font=('Consolas', 9))
 lbl_item2_btn.place(x=5, y=285)
 entr_item2_btn = tkinter.Entry(textvariable=b2_btn, width=4, font=('Consolas', 9))
 entr_item2_btn.place(x=175, y=285)
-entr_item2_btn.insert(0, button_buff2)
+entr_item2_btn.insert(0, settings['button_buff2'])
 
 lbl_item2_interval = tkinter.Label(window, text="Прожимать каждые(сек)", font=('Consolas', 9))
 lbl_item2_interval.place(x=5, y=315)
 entr_item2_interval = tkinter.Entry(textvariable=buff2_intr, width=4, font=('Consolas', 9))
 entr_item2_interval.place(x=175, y=315)
-entr_item2_interval.insert(0, buff2_interval)
+entr_item2_interval.insert(0, settings['buff2_interval'])
 
 # основной блок
 
@@ -744,37 +688,37 @@ lbl_process = tkinter.Label(window, text="Имя процесса", font=('Conso
 lbl_process.place(x=220, y=195)
 entr_process = tkinter.Entry(textvariable=prc_name, width=16, font=('Consolas', 9))
 entr_process.place(x=310, y=195)
-entr_process.insert(0, wow_process)
+entr_process.insert(0, settings['wow_process'])
 
 lbl_fishing = tkinter.Label(window, text="Кнопка рыбалки", font=('Consolas', 9))
 lbl_fishing.place(x=220, y=225)
 entr_fishing = tkinter.Entry(textvariable=btn_f, width=4, font=('Consolas', 9))
 entr_fishing.place(x=395, y=225)
-entr_fishing.insert(0, button_fishing)
+entr_fishing.insert(0, settings['button_fishing'])
 
 lbl_threshold = tkinter.Label(window, text="Порог нахождения поплавка", font=('Consolas', 9))
 lbl_threshold.place(x=220, y=255)
 entr_threshold = tkinter.Entry(textvariable=threshold_txt, width=4, font=('Consolas', 9))
 entr_threshold.place(x=395, y=255)
-entr_threshold.insert(0, threshold)
+entr_threshold.insert(0, settings['threshold'])
 
 lbl_minpic_diff = tkinter.Label(window, text="Порог подсекания", font=('Consolas', 9))
 lbl_minpic_diff.place(x=220, y=285)
 entr_minpic_diff = tkinter.Entry(textvariable=minpic_diff_txt, width=4, font=('Consolas', 9))
 entr_minpic_diff.place(x=395, y=285)
-entr_minpic_diff.insert(0, minpic_diff)
+entr_minpic_diff.insert(0, settings['minpic_diff'])
 
 lbl_max_tries = tkinter.Label(window, text="Максимум забросов", font=('Consolas', 9))
 lbl_max_tries.place(x=220, y=315)
 entr_max_tries = tkinter.Entry(textvariable=max_tries_int, width=4, font=('Consolas', 9))
 entr_max_tries.place(x=395, y=315)
-entr_max_tries.insert(0, max_tries)
+entr_max_tries.insert(0, settings['max_tries'])
 
 lbl_deactive = tkinter.Label(window, text="Ненахождений поплавка до выхода", font=('Consolas', 9))
 lbl_deactive.place(x=5, y=345)
 entr_deactive = tkinter.Entry(textvariable=deactive_txt, width=4, font=('Consolas', 9))
 entr_deactive.place(x=230, y=345)
-entr_deactive.insert(0, deactive)
+entr_deactive.insert(0, settings['deactive'])
 
 
 lbl_algorithm_text = tkinter.Label(window, text="Алгоритм подсекания", font=('Consolas', 9))
@@ -783,7 +727,7 @@ alg_01 = tkinter.Radiobutton(window, text="Визуальный", variable=algor
 alg_01.place(x=5, y=390)
 alg_02 = tkinter.Radiobutton(window, text="Аудиальный", variable=algorithm_tk, value='audio', font=('Consolas', 9))
 alg_02.place(x=150, y=390)
-algorithm_tk.set(algorithm)
+algorithm_tk.set(settings['algorithm'])
 
 # Creating Menubar
 menubar = tkinter.Menu(window)
